@@ -1,88 +1,70 @@
-# BusyLine Voicemail Blaster
+# Voicemail Blaster
 
-A minimal Node.js backend service for blasting pre-recorded voicemails to lists of phone numbers using Twilio with Answering Machine Detection (AMD).
+Twilio-powered voicemail drop blaster. Upload a CSV → run the script → auto-dial each lead → drop a voicemail without ringing.
 
-## Features
+## What It Does
 
-- **Outbound voicemail blasts** via Twilio API
-- **Answering Machine Detection** with async webhook callbacks
-- **TwiML voicemail playback** endpoint
-- **RESTful API** for triggering blasts
-- **No UI** - pure command-line/HTTP backend
+This tool automatically dials phone numbers from a CSV file and drops pre-recorded voicemails using Twilio. It uses Answering Machine Detection (AMD) to ensure voicemails are only left on answering machines, not when humans answer.
 
-## Prerequisites
+## Requirements
 
-- Node.js (v14 or higher)
-- Twilio account with:
+- **Node.js** (v14 or higher)
+- **Twilio account** with:
   - Account SID and Auth Token
   - A verified phone number (or Twilio number) for outbound calls
-- A publicly accessible URL for webhooks (use ngrok for local development)
+- **ngrok** (for local development) - to expose your local server to Twilio webhooks
 
 ## Setup
 
-### 1. Install Dependencies
-
 ```bash
+git clone https://github.com/Skylargs/voicemail-blaster.git
+cd voicemail-blaster
 npm install
+cp .env.example .env   # then fill it in
+npm start              # runs webhook server
+npm run blast:csv      # runs the CSV dialer
 ```
 
-### 2. Configure Environment Variables
+### Configure Environment Variables
 
-Copy `.env.example` to `.env` and fill in your values:
+After copying `.env.example` to `.env`, edit `.env` with your actual values:
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env`:
-
-```
-TWILIO_ACCOUNT_SID=your_account_sid_here
-TWILIO_AUTH_TOKEN=your_auth_token_here
-TWILIO_FROM_NUMBER=+1234567890
-PUBLIC_BASE_URL=https://your-public-url.com
-VOICEMAIL_AUDIO_URL=https://your-audio-file-url.mp3
-PORT=3000
-```
-
-**Important Notes:**
-- `TWILIO_FROM_NUMBER`: Must be a Twilio phone number in E.164 format (e.g., `+1234567890`)
-- `PUBLIC_BASE_URL`: Must be publicly accessible. Twilio needs to reach your webhooks.
+- `TWILIO_ACCOUNT_SID`: Your Twilio Account SID
+- `TWILIO_AUTH_TOKEN`: Your Twilio Auth Token
+- `TWILIO_FROM_NUMBER`: Your Twilio phone number in E.164 format (e.g., `+1234567890`)
+- `PUBLIC_BASE_URL`: Your ngrok URL (e.g., `https://abc123.ngrok.io`) or your deployed domain
 - `VOICEMAIL_AUDIO_URL`: Public URL to your voicemail audio file (MP3, WAV, etc.)
 
-### 3. Local Development with ngrok
+### Local Development with ngrok
 
-For local testing, expose your server using ngrok:
-
-```bash
-# Install ngrok (if not already installed)
-# macOS: brew install ngrok
-# Or download from https://ngrok.com/
-
-# Start your server
-npm start
-
-# In another terminal, expose it
-ngrok http 3000
-```
-
-Copy the ngrok HTTPS URL (e.g., `https://abc123.ngrok.io`) and set it as `PUBLIC_BASE_URL` in your `.env` file.
-
-**Important:** Update your `.env` file with the ngrok URL, then restart your server.
+1. Start the server: `npm start`
+2. In another terminal, expose it: `ngrok http 3000`
+3. Copy the ngrok HTTPS URL and set it as `PUBLIC_BASE_URL` in your `.env` file
+4. Restart your server
 
 ## Usage
 
-### Start the Server
+### Start the Webhook Server
+
+The webhook server must be running for Twilio to deliver callbacks:
 
 ```bash
 npm start
 ```
 
-The server will start on the port specified in `PORT` (default: 3000).
+### Run CSV Blast
 
-### Trigger a Voicemail Blast
+With the server running, execute the CSV dialer:
 
-Send a POST request to `/blast` with an array of phone numbers:
+```bash
+npm run blast:csv
+```
+
+The script will read from `leads.csv` and dial each number, dropping voicemails when answering machines are detected.
+
+### API Endpoint (Alternative)
+
+You can also trigger blasts via HTTP POST:
 
 ```bash
 curl -X POST "http://localhost:3000/blast" \
@@ -90,84 +72,14 @@ curl -X POST "http://localhost:3000/blast" \
   -d '{"numbers":["+18595550101","+18595550102"]}'
 ```
 
-Or using the public URL:
-
-```bash
-curl -X POST "$PUBLIC_BASE_URL/blast" \
-  -H "Content-Type: application/json" \
-  -d '{"numbers":["+18595550101","+18595550102"]}'
-```
-
-**Response:**
-
-```json
-{
-  "count": 2,
-  "results": [
-    {
-      "number": "+18595550101",
-      "success": true,
-      "callSid": "CA1234567890abcdef",
-      "status": "queued"
-    },
-    {
-      "number": "+18595550102",
-      "success": true,
-      "callSid": "CA0987654321fedcba",
-      "status": "queued"
-    }
-  ]
-}
-```
-
 ## How It Works
 
-### 1. Blast Endpoint (`/blast`)
+1. **CSV Blast Script** (`blast-from-csv.js`): Reads phone numbers from `leads.csv` and initiates calls via the `/blast` API endpoint
+2. **Blast Endpoint** (`/blast`): Creates Twilio outbound calls with Answering Machine Detection (AMD)
+3. **TwiML Endpoint** (`/twiml/voicemail`): Returns TwiML XML that plays your voicemail audio when a call connects
+4. **AMD Webhook** (`/webhooks/amd`): Receives AMD results from Twilio and logs them
 
-When you POST to `/blast`:
-- Validates the `numbers` array
-- For each number, creates a Twilio outbound call with:
-  - `machineDetection: "DetectMessageEnd"` - Detects answering machines
-  - `asyncAmd: "true"` - Uses async AMD (non-blocking)
-  - `asyncAmdStatusCallback` - Webhook URL for AMD results
-- Returns results with call SIDs or errors
-
-### 2. TwiML Endpoint (`/twiml/voicemail`)
-
-Twilio calls this endpoint when a call connects:
-- Returns TwiML XML that:
-  - Pauses for 1 second
-  - Plays the voicemail audio from `VOICEMAIL_AUDIO_URL`
-  - Hangs up
-
-**TwiML Response:**
-```xml
-<Response>
-  <Pause length="1"/>
-  <Play>https://your-audio-file-url.mp3</Play>
-  <Hangup/>
-</Response>
-```
-
-### 3. AMD Webhook (`/webhooks/amd`)
-
-Twilio POSTs to this endpoint when AMD completes:
-- Logs the result to console:
-  - `CallSid`
-  - `To` (recipient number)
-  - `AnsweredBy` (`machine`, `human`, or `unknown`)
-- Responds with 200 OK
-
-**Example Console Output:**
-```
-=== AMD Result ===
-CallSid: CA1234567890abcdef
-To: +18595550101
-AnsweredBy: machine
-==================
-```
-
-## Endpoints
+## API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -178,32 +90,7 @@ AnsweredBy: machine
 
 ## Deployment
 
-This service is designed to be deployable on any Node.js hosting platform:
-
-- **Railway**: Add environment variables in dashboard
-- **Render**: Set environment variables in service settings
-- **Fly.io**: Use `fly secrets set` command
-- **Supabase Edge Functions**: Adapt for Deno runtime
-- **Heroku**: Use `heroku config:set`
-
-Ensure `PUBLIC_BASE_URL` points to your deployed service URL.
-
-## Error Handling
-
-- Invalid requests return `400` with error message
-- Missing configuration returns `500` with error details
-- Individual call failures are logged but don't stop the blast
-- All errors are logged to console
-
-## Logging
-
-The service logs:
-- Server startup information
-- Call initiation status
-- AMD results (when received)
-- Errors and failures
-
-All logs go to `console.log`/`console.error` for easy integration with logging services.
+Deploy to any Node.js hosting platform (Railway, Render, Fly.io, Heroku, etc.). Ensure `PUBLIC_BASE_URL` points to your deployed service URL and all environment variables are set.
 
 ## License
 
