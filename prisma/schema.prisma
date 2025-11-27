@@ -1,0 +1,122 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           Int        @id @default(autoincrement())
+  email        String     @unique
+  passwordHash String
+  createdAt    DateTime   @default(now())
+  campaigns    Campaign[]
+  // Internal usage billing
+  billingUsageCents Int     @default(0)
+  billingPeriodStart DateTime?
+  billingPeriodEnd   DateTime?
+  // Stripe integration
+  stripeCustomerId          String?   // existing, keep
+  stripeSubscriptionId      String?   // subscription tracking
+  stripeSubscriptionItemId  String?   // for metered usage records
+  subscriptionStatus        String?   // e.g. 'trial', 'active', 'past_due', 'canceled'
+  billingEvents BillingEvent[]
+  twilioConfig TwilioConfig?
+  voicemailAudios   VoicemailAudio[]
+  // Onboarding flags
+  onboardingBusinessDone  Boolean @default(false)
+  onboardingTwilioDone    Boolean @default(false)
+  onboardingVoicemailDone Boolean @default(false)
+  onboardingCampaignDone  Boolean @default(false)
+  onboardingLeadsDone     Boolean @default(false)
+  onboardingBlastDone     Boolean @default(false)
+  onboardingCompleted     Boolean @default(false)
+}
+
+model TwilioConfig {
+  id                 Int      @id @default(autoincrement())
+  user               User     @relation(fields: [userId], references: [id])
+  userId             Int      @unique
+  accountSid         String
+  authToken          String
+  defaultFromNumber  String
+  numberPool         String?   // comma-separated: "+1872..., +1859..."
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Campaign {
+  id         Int       @id @default(autoincrement())
+  name       String
+  fromNumber String
+  status     String    @default("draft") // draft | running | completed
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  user       User      @relation(fields: [userId], references: [id])
+  userId     Int
+  leads      Lead[]
+  callLogs   CallLog[]
+  billingEvents BillingEvent[]
+  voicemailAudio   VoicemailAudio? @relation(fields: [voicemailAudioId], references: [id])
+  voicemailAudioId Int?
+}
+
+model Lead {
+  id         Int      @id @default(autoincrement())
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+  campaignId Int
+
+  name      String?
+  number    String
+  status    String   @default("queued")
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  // Opposite side of CallLog.lead
+  callLogs CallLog[]
+}
+
+model CallLog {
+  id         String    @id @default(cuid())
+  campaign   Campaign? @relation(fields: [campaignId], references: [id])
+  campaignId Int?
+
+  lead   Lead? @relation(fields: [leadId], references: [id])
+  leadId Int? // ← FIXED: Must be Int? (NOT String)
+
+  callSid    String?
+  number     String?
+  status     String?
+  answeredBy String? // human, machine, etc.
+  success    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  billingEvents BillingEvent[]
+}
+
+model BillingEvent {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  campaign  Campaign? @relation(fields: [campaignId], references: [id])
+  campaignId Int?
+  callLog   CallLog? @relation(fields: [callLogId], references: [id])
+  callLogId String?
+  // One unit = one call attempt (for now)
+  units           Int      @default(1)
+  unitPriceCents  Int      // e.g. 2 = $0.02 per call
+  totalCents      Int      // units * unitPriceCents
+  createdAt DateTime @default(now())
+}
+
+model VoicemailAudio {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  name      String
+  filePath  String   // relative path like "voicemail/xxx-uuid.mp3"
+  createdAt DateTime @default(now())
+  campaigns Campaign[]
+}

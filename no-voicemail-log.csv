@@ -1,0 +1,8 @@
+timestamp,number,callSid,answeredBy,status
+2025-11-25T02:42:19.187Z,,CA3baca3e4dec2c2cb8df4e6c039298689,"unknown",amd_unknown
+2025-11-25T02:55:37.220Z,undefined,CA08e56d9a89f2a4a825e440d1d23614a6,"unknown","amd_unknown"
+2025-11-25T03:05:36.431Z,+18594734272,CA5864a0e7ef2c92e40cccf718968c9063,"unknown","amd_unknown"
+2025-11-25T03:18:21.693Z,+18598004000,CA0fc6b99050718f5698f8af4dee704dac,"unknown","amd_unknown"
+2025-11-25T06:46:05.157Z,+18598004000,CAe476adcb29b0b9f2d58942f02bfe5fe9,"unknown","amd_unknown"
+2025-11-25T06:48:16.495Z,+18594734272,CAbc09941f8aa90841ace9f65403cd9b5f,"unknown","amd_unknown"
+2025-11-25T06:48:28.708Z,+16154802938,CA3e6356deb33af7c713ca001ec9cf7da0,"human","amd_human"
